@@ -91,14 +91,15 @@ BOT_VICTORY_PHRASES = [
     "I may just be a fish, but you're still just a human 🐟",
 ]
 
-# Configure logging (both file and console)
+# Configure logging (with safe 5MB rotation to prevent memory/disk bloat)
+from logging.handlers import RotatingFileHandler
 log_file = config.BASE_DIR / "panicfish.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s",
     datefmt="%H:%M:%S",
     handlers=[
-        logging.FileHandler(str(log_file), encoding="utf-8"),
+        RotatingFileHandler(str(log_file), maxBytes=5 * 1024 * 1024, backupCount=1, encoding="utf-8"),
         logging.StreamHandler(sys.stdout if sys.stdout is not None else sys.stderr)
     ]
 )
@@ -127,7 +128,7 @@ class PanicFishBot:
         self.client = berserk.Client(self.session)
         self.bot_user_id = ""
         self.bot_username = ""
-        self.active_games: Set[str] = set()
+        self.active_games: dict[str, threading.Event] = {}
         self.active_games_lock = threading.Lock()
         self._start_health_server()
 
@@ -192,7 +193,7 @@ class PanicFishBot:
         except Exception as e:
             logger.debug(f"Chat message failed for game {game_id}: {e}")
 
-    def handle_game(self, game_id: str):
+    def handle_game(self, game_id: str, stop_event: threading.Event):
         """Worker thread loop handling an individual game."""
         thread_name = f"Game-{game_id[:6]}"
         threading.current_thread().name = thread_name
@@ -212,27 +213,30 @@ class PanicFishBot:
             used_quotes: set[str] = set()
 
             # Stream game state with automatic reconnection resilience
-            game_finished = False
             current_moves = [[]]
             last_activity = [time.time()]
 
             def inactivity_watchdog():
-                while not game_finished:
+                while not stop_event.is_set():
                     time.sleep(5.0)
-                    if not game_finished and len(current_moves[0]) <= 1:
+                    if not stop_event.is_set() and len(current_moves[0]) <= 1:
                         if time.time() - last_activity[0] > 60.0:
                             logger.info(f"Watchdog: aborting game {game_id} due to opponent inactivity on move 1 (>60s).")
                             try:
                                 self.client.bots.abort_game(game_id)
                             except Exception as abort_err:
                                 logger.warning(f"Watchdog could not abort game {game_id}: {abort_err}")
+                            stop_event.set()
                             break
 
             threading.Thread(target=inactivity_watchdog, daemon=True).start()
 
-            while not game_finished:
+            while not stop_event.is_set():
                 try:
                     for event in self.client.bots.stream_game_state(game_id):
+                        if stop_event.is_set():
+                            break
+
                         event_type = event.get("type")
 
                         if event_type == "gameFull":
@@ -271,7 +275,7 @@ class PanicFishBot:
                                         self.send_chat(game_id, random.choice(BOT_VICTORY_PHRASES))
                                     else:
                                         self.send_chat(game_id, "You won. Please don't eat me 🐟")
-                                game_finished = True
+                                stop_event.set()
                                 break
 
                             moves_str = event.get("moves", "").strip()
@@ -284,10 +288,10 @@ class PanicFishBot:
                             pass
 
                     # If stream ended normally without game-over status, check if we should reconnect
-                    if not game_finished:
+                    if not stop_event.is_set():
                         time.sleep(1.0)
                 except Exception as stream_err:
-                    if game_finished:
+                    if stop_event.is_set():
                         break
                     logger.warning(f"Game stream interrupted for {game_id}: {stream_err}. Reconnecting in 1s...")
                     time.sleep(1.0)
@@ -297,7 +301,9 @@ class PanicFishBot:
         finally:
             engine.close()
             with self.active_games_lock:
-                self.active_games.discard(game_id)
+                self.active_games.pop(game_id, None)
+            import gc
+            gc.collect()
             logger.info(f"Finished and cleaned up game {game_id}")
 
     def _get_unique_quote(self, pool: list[str], used_set: set[str]) -> str:
@@ -476,8 +482,9 @@ class PanicFishBot:
                             with self.active_games_lock:
                                 if game_id in self.active_games:
                                     continue
-                                self.active_games.add(game_id)
-                            t = threading.Thread(target=self.handle_game, args=(game_id,), daemon=True)
+                                stop_event = threading.Event()
+                                self.active_games[game_id] = stop_event
+                            t = threading.Thread(target=self.handle_game, args=(game_id, stop_event), daemon=True)
                             t.start()
 
                     elif event_type == "gameFinish":
@@ -485,7 +492,9 @@ class PanicFishBot:
                         game_id = game.get("id") or game.get("gameId")
                         if game_id:
                             with self.active_games_lock:
-                                self.active_games.discard(game_id)
+                                stop_event = self.active_games.pop(game_id, None)
+                                if stop_event:
+                                    stop_event.set()
                         logger.info(f"Game {game_id} marked as finished.")
 
             except Exception as e:

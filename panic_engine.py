@@ -35,19 +35,19 @@ class PanicEngine:
         self._last_move_count = 0
 
     def start(self):
-        """Initializes the Stockfish engine process."""
+        """Initializes the Stockfish engine process with safety timeout."""
         if self.engine is None:
             logger.info(f"Spawning Stockfish instance from: {self.stockfish_path}")
-            self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+            self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path, timeout=30.0)
             self.configure_for_elo(self.starting_elo)
 
     def close(self):
-        """Terminates the Stockfish process cleanly."""
+        """Terminates the Stockfish process cleanly and frees memory."""
         if self.engine is not None:
             try:
-                self.engine.quit()
+                self.engine.close()
             except Exception as e:
-                logger.warning(f"Error while quitting engine: {e}")
+                logger.warning(f"Error while closing engine: {e}")
             finally:
                 self.engine = None
 
@@ -137,7 +137,7 @@ class PanicEngine:
         try:
             self.engine.configure({
                 "Threads": 1,
-                "Hash": 16,
+                "Hash": 8,
                 "UCI_LimitStrength": False,
                 "Skill Level": 20
             })

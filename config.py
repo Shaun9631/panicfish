@@ -53,5 +53,5 @@ SEND_CHAT_ALERTS = os.getenv("SEND_CHAT_ALERTS", "true").lower() in ("true", "1"
 ACCEPT_VARIANTS = os.getenv("ACCEPT_VARIANTS", "standard").lower().split(",")
 ACCEPT_VARIANTS = [v.strip() for v in ACCEPT_VARIANTS if v.strip()]
 
-# Maximum simultaneous active games
-MAX_CONCURRENT_GAMES = int(os.getenv("MAX_CONCURRENT_GAMES", "5"))
+# Maximum simultaneous active games (1 ensures zero lag, 100% CPU focus, and low memory)
+MAX_CONCURRENT_GAMES = int(os.getenv("MAX_CONCURRENT_GAMES", "1"))

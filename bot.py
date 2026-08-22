@@ -54,35 +54,35 @@ SCARED_FISH_PHRASES = [
     "I'm still sharp. I'm still strong. 🐟 (-300 elo)",
 ]
 
-# Tier 3: Potato check quotes (0 Elo)
+# Tier 3: Potato & Panic check quotes (600, 300, and 0 Elo)
 POTATO_FISH_PHRASES = [
-    "BLUB BLUB I'M SCARED (0 elo)",
-    "HEAD EMPTY NO THOUGHTS JUST BUBBLES (0 elo)",
-    "WHICH ONE IS THE HORSEY AGAIN (0 elo)",
-    "I HAVE FORGOTTEN HOW CHESS WORKS (0 elo)",
-    "PLEASE TAKE MY PIECES THEY ARE CONFUSING ME (0 elo)",
-    "I CAN ONLY THINK ONE MOVE AHEAD AND IT'S NOT A GOOD ONE (0 elo)",
-    "I thought we were playing checkers (0 elo)",
-    "Every move I make is a surprise to both of us (0 elo)",
-    "Can the pawns move backwards? (0 elo)",
-    "Please stop checking me, I'm already at the bottom (0 elo)",
-    "I have kids don't eat me (0 elo)",
-    "Why can't I castle anymore? (0 elo)",
-    "My evaluation bar just fell off the screen (0 elo)",
-    "Blub blub... system error... no brain found (0 elo)",
-    "My calculation depth is currently negative (0 elo)",
-    "I wonder what chess pieces taste like... (0 elo)",
-    "*terrified fish noises* (0 elo)",
-    "unfdeef a cinokex oidutuib (0 elo)",
-    "I DON'T TASTE GOOD STOP CHECKING ME (0 elo)",
-    "Where's the swim away button (0 elo)",
-    "SWIMMING FOR MY LIFE (0 elo)",
-    "WHY ARE YOU ATTACKING ME (0 elo)",
-    "I'M JUST A LITTLE FISH LEAVE ME ALONE (0 elo)",
-    "SOMEBODY THROW ME BACK IN THE WATER (0 elo)",
-    "WHERE IS MY CORAL REEF (0 elo)",
-    "WHAT WAS THAT I'M SCARED (0 elo)",
-    "PLEASE DON'T TOUCH MY KING (0 elo)",
+    "BLUB BLUB I'M SCARED",
+    "HEAD EMPTY NO THOUGHTS JUST BUBBLES",
+    "WHICH ONE IS THE HORSEY AGAIN",
+    "I HAVE FORGOTTEN HOW CHESS WORKS",
+    "PLEASE TAKE MY PIECES THEY ARE CONFUSING ME",
+    "I CAN ONLY THINK ONE MOVE AHEAD AND IT'S NOT A GOOD ONE",
+    "I thought we were playing checkers",
+    "Every move I make is a surprise to both of us",
+    "Can the pawns move backwards?",
+    "Please stop checking me, I'm already at the bottom",
+    "I have kids don't eat me",
+    "Why can't I castle anymore?",
+    "My evaluation bar just fell off the screen",
+    "Blub blub... system error... no brain found",
+    "My calculation depth is currently negative",
+    "I wonder what chess pieces taste like...",
+    "*terrified fish noises*",
+    "unfdeef a cinokex oidutuib",
+    "I DON'T TASTE GOOD STOP CHECKING ME",
+    "Where's the swim away button",
+    "SWIMMING FOR MY LIFE",
+    "WHY ARE YOU ATTACKING ME",
+    "I'M JUST A LITTLE FISH LEAVE ME ALONE",
+    "SOMEBODY THROW ME BACK IN THE WATER",
+    "WHERE IS MY CORAL REEF",
+    "WHAT WAS THAT I'M SCARED",
+    "PLEASE DON'T TOUCH MY KING",
 ]
 
 # Bot victory quotes (when bot wins)
@@ -331,9 +331,12 @@ class PanicFishBot:
 
         # Broadcast panic update if a new check occurred
         if new_check:
-            if current_elo <= config.MIN_ELO:
+            if current_elo <= 600:
                 quote = self._get_unique_quote(POTATO_FISH_PHRASES, used_quotes)
-                self.send_chat(game_id, quote)
+                if current_elo <= config.MIN_ELO:
+                    self.send_chat(game_id, f"{quote} (0 elo)")
+                else:
+                    self.send_chat(game_id, f"{quote} 🐟 (-300 elo) (Rating: {current_elo} elo)")
             elif current_elo >= 2100:
                 quote = self._get_unique_quote(CONFIDENT_FISH_PHRASES, used_quotes)
                 self.send_chat(game_id, f"{quote} (Rating: {current_elo} elo)")

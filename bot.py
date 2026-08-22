@@ -10,7 +10,9 @@ import logging
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
 
-from typing import Set, Any
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from logging.handlers import RotatingFileHandler
+from typing import Any, Optional, Tuple
 import chess
 import berserk
 
@@ -92,7 +94,6 @@ BOT_VICTORY_PHRASES = [
 ]
 
 # Configure logging (with safe 5MB rotation to prevent memory/disk bloat)
-from logging.handlers import RotatingFileHandler
 log_file = config.BASE_DIR / "panicfish.log"
 logging.basicConfig(
     level=logging.INFO,
@@ -135,8 +136,6 @@ class PanicFishBot:
 
     def _start_health_server(self):
         """Starts a lightweight multi-threaded HTTP health check endpoint for cloud platforms (Render, Fly.io, etc.)."""
-        from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-
         port = int(os.getenv("PORT", "10000"))
 
         class HealthHandler(BaseHTTPRequestHandler):

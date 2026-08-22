@@ -1,0 +1,31 @@
+# Environment & Secrets (NEVER COMMIT SENSITIVE API TOKENS OR KEYS)
+.env
+*.key
+*.pem
+id_*
+
+# Local Windows automation scripts
+*.ps1
+*.vbs
+*.bat
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Engine Binaries (downloaded via download_stockfish.py)
+engine/
+*.exe
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE & OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

@@ -15,7 +15,7 @@ import chess
 import berserk
 
 import config
-from panic_engine import PanicEngine
+from panic_engine import PanicEngine, GameSession
 
 # Match start intro quotes (confident & slightly intimidating)
 INTRO_PHRASES = [
@@ -127,9 +127,10 @@ class PanicFishBot:
         self.session = berserk.TokenSession(self.token)
         self.client = berserk.Client(self.session)
         self.bot_user_id = ""
-        self.bot_username = ""
         self.active_games: dict[str, threading.Event] = {}
         self.active_games_lock = threading.Lock()
+        self.engine = PanicEngine(stockfish_path=config.STOCKFISH_PATH)
+        self.engine.start()
         self._start_health_server()
 
     def _start_health_server(self):
@@ -194,24 +195,20 @@ class PanicFishBot:
             logger.debug(f"Chat message failed for game {game_id}: {e}")
 
     def handle_game(self, game_id: str, stop_event: threading.Event):
-        """Worker thread loop handling an individual game."""
+        """Worker thread loop handling an individual game session."""
         thread_name = f"Game-{game_id[:6]}"
         threading.current_thread().name = thread_name
         logger.info(f"Starting game handler for {game_id}")
 
-        engine = PanicEngine(
-            stockfish_path=config.STOCKFISH_PATH,
+        session = GameSession(
+            is_bot_white=True,
             starting_elo=config.STARTING_ELO,
             elo_drop_per_check=config.ELO_DROP_PER_CHECK,
             min_elo=config.MIN_ELO
         )
 
         try:
-            engine.start()
             is_white = True
-            triggered_easter_eggs: set[str] = set()
-            used_quotes: set[str] = set()
-
             # Stream game state with automatic reconnection resilience
             current_moves = [[]]
             last_activity = [time.time()]
@@ -242,7 +239,7 @@ class PanicFishBot:
                         if event_type == "gameFull":
                             white_id = event.get("white", {}).get("id", "").lower()
                             is_white = (white_id == self.bot_user_id)
-                            engine.reset_game(is_bot_white=is_white)
+                            session.reset(is_bot_white=is_white)
 
                             opponent = event.get("black" if is_white else "white", {}).get("name", "Opponent")
                             color_str = "White" if is_white else "Black"
@@ -259,7 +256,7 @@ class PanicFishBot:
                             moves = moves_str.split() if moves_str else []
                             current_moves[0] = moves
                             last_activity[0] = time.time()
-                            self._process_state(game_id, engine, moves, state, is_white, triggered_easter_eggs, used_quotes)
+                            self._process_state(game_id, session, moves, state, is_white)
 
                         elif event_type == "gameState":
                             status = event.get("status")
@@ -282,7 +279,7 @@ class PanicFishBot:
                             moves = moves_str.split() if moves_str else []
                             current_moves[0] = moves
                             last_activity[0] = time.time()
-                            self._process_state(game_id, engine, moves, event, is_white, triggered_easter_eggs, used_quotes)
+                            self._process_state(game_id, session, moves, event, is_white)
 
                         elif event_type == "chatLine":
                             pass
@@ -299,7 +296,6 @@ class PanicFishBot:
         except Exception as e:
             logger.error(f"Exception during game {game_id}: {e}", exc_info=True)
         finally:
-            engine.close()
             with self.active_games_lock:
                 self.active_games.pop(game_id, None)
             import gc
@@ -319,36 +315,34 @@ class PanicFishBot:
     def _process_state(
         self,
         game_id: str,
-        engine: PanicEngine,
+        session: GameSession,
         moves: list[str],
         state: dict,
-        is_white: bool,
-        triggered_easter_eggs: set[str],
-        used_quotes: set[str]
+        is_white: bool
     ):
         """Processes current board state, checks, panic calculation, and move dispatch."""
-        new_check, total_checks, current_elo = engine.analyze_moves_and_count_checks(moves)
+        new_check, total_checks, current_elo = session.analyze_moves_and_count_checks(moves)
 
         # Easter Egg: 1. e4 e5 2. Nf3 Nc6 3. Bc4 (Italian Game) as Black
         if not is_white and moves == ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"]:
-            if "italian_f7" not in triggered_easter_eggs:
-                triggered_easter_eggs.add("italian_f7")
+            if "italian_f7" not in session.triggered_easter_eggs:
+                session.triggered_easter_eggs.add("italian_f7")
                 self.send_chat(game_id, "Take on f7. I dare you.")
 
         # Broadcast panic update if a new check occurred
         if new_check:
             if current_elo <= 600:
-                quote = self._get_unique_quote(POTATO_FISH_PHRASES, used_quotes)
+                quote = self._get_unique_quote(POTATO_FISH_PHRASES, session.used_quotes)
                 if current_elo <= config.MIN_ELO:
                     self.send_chat(game_id, f"{quote} (0 elo)")
                 else:
                     self.send_chat(game_id, f"{quote} 🐟 (-300 elo) (Rating: {current_elo} elo)")
             elif current_elo >= 2400:
-                quote = self._get_unique_quote(CONFIDENT_FISH_PHRASES, used_quotes)
+                quote = self._get_unique_quote(CONFIDENT_FISH_PHRASES, session.used_quotes)
                 self.send_chat(game_id, f"{quote} (Rating: {current_elo} elo)")
             else:
                 # 2100 down to 900 Elo: Scared / Nervous quotes
-                quote = self._get_unique_quote(SCARED_FISH_PHRASES, used_quotes)
+                quote = self._get_unique_quote(SCARED_FISH_PHRASES, session.used_quotes)
                 self.send_chat(game_id, f"{quote} (Rating: {current_elo} elo)")
 
         # Reconstruct current board state
@@ -375,8 +369,8 @@ class PanicFishBot:
         # Dynamic time allocation (safely handle numbers)
         time_limit_sec = max(0.1, min((remaining_sec / 30.0) + (inc_sec / 2.0), 2.0))
 
-        # Ask PanicEngine for the next move
-        move = engine.choose_move(board, time_limit=time_limit_sec)
+        # Ask Master PanicEngine for the next move
+        move = self.engine.choose_move(board, current_elo=current_elo, time_limit=time_limit_sec)
         if move:
             move_uci = move.uci()
             logger.info(f"Playing move {move_uci} (Rating: {current_elo} Elo, Checks: {total_checks})")

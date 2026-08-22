@@ -16,5 +16,7 @@ COPY . .
 
 # Run unbuffered output so logs show up immediately in cloud dashboard
 ENV PYTHONUNBUFFERED=1
+ENV PORT=10000
+EXPOSE 10000
 
 CMD ["python", "bot.py"]

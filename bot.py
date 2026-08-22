@@ -119,6 +119,7 @@ def parse_time_seconds(val: Any, default: float = 60.0) -> float:
 
 class PanicFishBot:
     def __init__(self):
+        self._start_health_server()
         self.token = config.LICHESS_API_TOKEN
         if not self.token or self.token == "your_lichess_token_here":
             logger.error("No valid LICHESS_API_TOKEN found in config/.env.")
@@ -132,7 +133,6 @@ class PanicFishBot:
         self.active_games_lock = threading.Lock()
         self.engine = PanicEngine(stockfish_path=config.STOCKFISH_PATH)
         self.engine.start()
-        self._start_health_server()
 
     def _start_health_server(self):
         """Starts a lightweight multi-threaded HTTP health check endpoint for cloud platforms (Render, Fly.io, etc.)."""

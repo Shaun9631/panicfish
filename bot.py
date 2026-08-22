@@ -28,7 +28,7 @@ INTRO_PHRASES = [
     "Current rating: 3600. I have never lost a game in my life.",
 ]
 
-# Tier 1: Confident check quotes (3300 - 2100 Elo)
+# Tier 1: Confident check quotes (3600 - 2400 Elo)
 CONFIDENT_FISH_PHRASES = [
     "A minor scratch 🐟 (-300 elo)",
     "Is that the best attack you have 🐟 (-300 elo)",
@@ -40,7 +40,7 @@ CONFIDENT_FISH_PHRASES = [
     "Enjoy the check while you can 🐟 (-300 elo)",
 ]
 
-# Tier 2: Position-neutral nervous / rattled check quotes (1800 - 300 Elo)
+# Tier 2: Nervous / rattled check quotes (2100 - 900 Elo)
 SCARED_FISH_PHRASES = [
     "Ahhh I'm in check 🐟 (-300 elo)",
     "NOT LIKE THIS 🐟 (-300 elo)",
@@ -337,10 +337,11 @@ class PanicFishBot:
                     self.send_chat(game_id, f"{quote} (0 elo)")
                 else:
                     self.send_chat(game_id, f"{quote} 🐟 (-300 elo) (Rating: {current_elo} elo)")
-            elif current_elo >= 2100:
+            elif current_elo >= 2400:
                 quote = self._get_unique_quote(CONFIDENT_FISH_PHRASES, used_quotes)
                 self.send_chat(game_id, f"{quote} (Rating: {current_elo} elo)")
             else:
+                # 2100 down to 900 Elo: Scared / Nervous quotes
                 quote = self._get_unique_quote(SCARED_FISH_PHRASES, used_quotes)
                 self.send_chat(game_id, f"{quote} (Rating: {current_elo} elo)")
 

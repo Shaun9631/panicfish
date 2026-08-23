@@ -3,6 +3,7 @@ Panic Engine - Master Controller for Stockfish with Dynamic Check-Based Degradat
 Shared singleton engine supporting multiple concurrent game sessions with minimal memory footprint.
 """
 
+import time
 import math
 import random
 import logging
@@ -168,6 +169,7 @@ class PanicEngine:
             bc5_move = chess.Move.from_uci("f8c5")
             if bc5_move in board.legal_moves:
                 logger.info("Opening Override: Playing 3... Bc5 against 3. Nc3 (Anti-Scotch Patch).")
+                time.sleep(0.5)
                 return bc5_move
 
 

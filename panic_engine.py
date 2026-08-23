@@ -162,6 +162,15 @@ class PanicEngine:
             logger.info("POTATO MODE (0 Elo): Selecting random legal move.")
             return random.choice(legal_moves)
 
+        # Opening Override: Anti-Scotch 4-Knights Exploit Patch
+        # When Black faces 1. e4 e5 2. Nf3 Nc6 3. Nc3, always play 3... Bc5
+        if board.board_fen() == "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R" and board.turn == chess.BLACK:
+            bc5_move = chess.Move.from_uci("f8c5")
+            if bc5_move in board.legal_moves:
+                logger.info("Opening Override: Playing 3... Bc5 against 3. Nc3 (Anti-Scotch Patch).")
+                return bc5_move
+
+
         with self.engine_lock:
             if not self.engine:
                 self.start()

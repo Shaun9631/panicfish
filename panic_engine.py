@@ -180,23 +180,23 @@ class PanicEngine:
             # Tier 2: 3300 - 600 Elo - Unified Softmax Temperature & Depth Scaling over MultiPV
             if current_elo <= 3300:
                 softmax_cfg = {
-                    # Elite GM Tiers (Ultra-low temperature: natural GM sidelines, zero blunders)
-                    3300: (2, 16, 0.08),
-                    3000: (3, 14, 0.14),
-                    2700: (3, 12, 0.20),
+                    # Top Lichess GM Tiers (Ultra-low temperature: world-class GM intuition)
+                    3300: (2, 14, 0.14),
+                    3000: (3, 12, 0.20),
+                    2700: (3, 10, 0.25),
 
-                    # Master / Expert Tiers (Calibrated to FIDE research error rates)
-                    2400: (3, 10, 0.25),
-                    2100: (4,  8, 0.45),
+                    # Lichess Master / Expert Tiers (2400-2100 Lichess Blitz)
+                    2400: (4,  8, 0.45),
+                    2100: (4,  6, 0.85),
 
-                    # Club Player Tiers (Medium temperature: human positional mistakes)
-                    1800: (4,  6, 0.85),
-                    1500: (4,  5, 1.40),
+                    # Lichess Club / Casual Tiers (1800-1500 Lichess Blitz)
+                    1800: (4,  5, 1.40),
+                    1500: (5,  4, 2.10),
 
-                    # Tactical Blindness Tiers (High temperature + shallow depth)
-                    1200: (5,  4, 2.10),
-                    900:  (5,  3, 2.90),
-                    600:  (6,  2, 3.90),
+                    # Lichess Beginner / Novice Tiers (1200-600 Lichess Blitz)
+                    1200: (5,  3, 2.90),
+                    900:  (6,  2, 3.90),
+                    600:  (6,  1, 4.80),
                 }
                 mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.10))
                 try:

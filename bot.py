@@ -185,13 +185,20 @@ class PanicFishBot:
         return False
 
     def send_chat(self, game_id: str, message: str):
-        """Sends an in-game chat message to opponent."""
+        """Sends an in-game chat message asynchronously with automatic retry."""
         if not config.SEND_CHAT_ALERTS:
             return
-        try:
-            self.client.bots.post_message(game_id, message)
-        except Exception as e:
-            logger.debug(f"Chat message failed for game {game_id}: {e}")
+
+        def _post():
+            for attempt in range(3):
+                try:
+                    self.client.bots.post_message(game_id, message)
+                    return
+                except Exception as e:
+                    logger.debug(f"Chat attempt {attempt+1} failed for {game_id}: {e}")
+                    time.sleep(0.4)
+
+        threading.Thread(target=_post, daemon=True).start()
 
     def handle_game(self, game_id: str, stop_event: threading.Event):
         """Worker thread loop handling an individual game session."""

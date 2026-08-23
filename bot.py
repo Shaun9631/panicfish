@@ -251,11 +251,12 @@ class PanicFishBot:
                             color_str = "White" if is_white else "Black"
                             logger.info(f"Game full: Playing as {color_str} vs {opponent}")
 
-                            # Greeting chat
-                            self.send_chat(
-                                game_id,
-                                random.choice(INTRO_PHRASES)
-                            )
+                            # Greeting chat (delayed 1.2s so player's browser WebSocket is connected)
+                            def _send_greeting():
+                                time.sleep(1.2)
+                                self.send_chat(game_id, random.choice(INTRO_PHRASES))
+
+                            threading.Thread(target=_send_greeting, daemon=True).start()
 
                             state = event.get("state", {})
                             moves_str = state.get("moves", "").strip()

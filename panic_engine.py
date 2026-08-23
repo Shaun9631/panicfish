@@ -181,24 +181,24 @@ class PanicEngine:
             if current_elo <= 3300:
                 softmax_cfg = {
                     # Elite GM Tiers (Ultra-low temperature: natural GM sidelines, zero blunders)
-                    3300: (2, 16, 0.03),
-                    3000: (3, 14, 0.06),
-                    2700: (3, 12, 0.10),
+                    3300: (2, 16, 0.08),
+                    3000: (3, 14, 0.14),
+                    2700: (3, 12, 0.20),
 
-                    # Master / Expert Tiers (Low temperature: subtle inaccuracies)
-                    2400: (3, 10, 0.20),
-                    2100: (4,  8, 0.40),
+                    # Master / Expert Tiers (Calibrated to FIDE research error rates)
+                    2400: (3, 10, 0.25),
+                    2100: (4,  8, 0.45),
 
                     # Club Player Tiers (Medium temperature: human positional mistakes)
-                    1800: (4,  6, 0.80),
-                    1500: (4,  5, 1.30),
+                    1800: (4,  6, 0.85),
+                    1500: (4,  5, 1.40),
 
                     # Tactical Blindness Tiers (High temperature + shallow depth)
-                    1200: (5,  4, 2.00),
-                    900:  (5,  3, 2.80),
-                    600:  (6,  2, 3.80),
+                    1200: (5,  4, 2.10),
+                    900:  (5,  3, 2.90),
+                    600:  (6,  2, 3.90),
                 }
-                mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.0))
+                mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.10))
                 try:
                     analysis = self.engine.analyse(
                         board,

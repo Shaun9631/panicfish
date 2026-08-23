@@ -198,24 +198,24 @@ class PanicEngine:
             if current_elo <= 3300:
                 softmax_cfg = {
                     # Top Lichess GM Tiers (Ultra-low temperature: world-class GM intuition)
-                    3300: (2, 14, 0.14),
-                    3000: (3, 12, 0.20),
-                    2700: (3, 10, 0.25),
+                    3300: (2, 14, 0.10),
+                    3000: (3, 12, 0.16),
+                    2700: (3, 10, 0.22),
 
                     # Lichess Master / Expert Tiers (2400-2100 Lichess Blitz)
-                    2400: (4,  8, 0.45),
-                    2100: (4,  6, 0.85),
+                    2400: (4,  8, 0.32),
+                    2100: (4,  6, 0.50),
 
                     # Lichess Club / Casual Tiers (1800-1500 Lichess Blitz)
-                    1800: (4,  5, 1.40),
-                    1500: (5,  5, 2.10),
+                    1800: (4,  5, 0.80),
+                    1500: (5,  5, 1.30),
 
-                    # Lichess Beginner / Novice Tiers (Coherent Depth >= 3 + High Temperature)
-                    1200: (5,  4, 2.80),
-                    900:  (5,  3, 3.60),
-                    600:  (6,  3, 4.50),
+                    # Lichess Beginner / Novice Tiers (Coherent Depth >= 3 + Smooth High Temperature)
+                    1200: (5,  4, 2.00),
+                    900:  (5,  3, 3.00),
+                    600:  (6,  3, 4.20),
                 }
-                mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.80))
+                mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.00))
                 try:
                     analysis = self.engine.analyse(
                         board,

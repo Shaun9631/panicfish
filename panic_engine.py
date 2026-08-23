@@ -74,8 +74,7 @@ class PanicEngine:
     Handles move evaluation for multiple concurrent games through thread-safe locking.
     Implements 13-tier nerfing architecture across:
     - God-Mode (3600 Elo)
-    - Resource Capping (3300, 3000, 2700 Elo)
-    - Softmax Temperature & Tactical Blindness Scaling over MultiPV (2400, 2100, 1800, 1500, 1200, 900, 600 Elo)
+    - Unified Softmax Temperature & Depth Scaling over MultiPV (3300 down to 600 Elo)
     - Passive Error Choice (300 Elo)
     - Engine Bypass / Potato Mode (0 Elo)
     """
@@ -178,16 +177,26 @@ class PanicEngine:
                     logger.warning(f"300 Elo passive error fallback: {e}")
                 return random.choice(legal_moves)
 
-            # Tier 3: 2400 - 600 Elo - Softmax Temperature & Tactical Blindness over MultiPV
-            if current_elo <= 2400:
+            # Tier 2: 3300 - 600 Elo - Unified Softmax Temperature & Depth Scaling over MultiPV
+            if current_elo <= 3300:
                 softmax_cfg = {
-                    2400: (3, 10, 0.1),
-                    2100: (3, 10, 0.3),
-                    1800: (4, 8, 0.7),
-                    1500: (4, 6, 1.2),
-                    1200: (5, 5, 1.8),
-                    900: (5, 3, 2.6),
-                    600: (6, 2, 3.6),
+                    # Elite GM Tiers (Ultra-low temperature: natural GM sidelines, zero blunders)
+                    3300: (2, 16, 0.03),
+                    3000: (3, 14, 0.06),
+                    2700: (3, 12, 0.10),
+
+                    # Master / Expert Tiers (Low temperature: subtle inaccuracies)
+                    2400: (3, 10, 0.20),
+                    2100: (4,  8, 0.40),
+
+                    # Club Player Tiers (Medium temperature: human positional mistakes)
+                    1800: (4,  6, 0.80),
+                    1500: (4,  5, 1.30),
+
+                    # Tactical Blindness Tiers (High temperature + shallow depth)
+                    1200: (5,  4, 2.00),
+                    900:  (5,  3, 2.80),
+                    600:  (6,  2, 3.80),
                 }
                 mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.0))
                 try:
@@ -203,23 +212,6 @@ class PanicEngine:
                 except Exception as e:
                     logger.warning(f"Softmax analysis error: {e}")
                 return random.choice(legal_moves)
-
-            # Tier 2: 3300 - 2700 Elo - Resource Capping
-            if current_elo <= 3300:
-                resource_cfg = {
-                    2700: (14, 0.1),
-                    3000: (16, 0.4),
-                    3300: (18, 0.8),
-                }
-                d, t = resource_cfg.get(current_elo, (16, 0.4))
-                actual_time = max(0.05, min(time_limit, t))
-                try:
-                    res = self.engine.play(board, chess.engine.Limit(depth=d, time=actual_time))
-                    logger.info(f"Resource Capping ({current_elo} Elo, D={d}, T={actual_time}s): Played {res.move.uci()}")
-                    return res.move
-                except Exception as e:
-                    logger.error(f"Resource capping error: {e}")
-                    return random.choice(legal_moves)
 
             # Tier 1: 3600 Elo - God-Mode (Uncapped Depth)
             actual_time = max(0.1, min(time_limit, 1.0))

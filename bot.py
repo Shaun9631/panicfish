@@ -297,8 +297,14 @@ class PanicFishBot:
                 except Exception as stream_err:
                     if stop_event.is_set():
                         break
-                    logger.warning(f"Game stream interrupted for {game_id}: {stream_err}. Reconnecting in 1s...")
-                    time.sleep(1.0)
+                    err_str = str(stream_err)
+                    if "429" in err_str or "Too Many Requests" in err_str:
+                        sleep_time = random.uniform(3.0, 5.0)
+                        logger.warning(f"Rate limited (429) for {game_id}. Cooling down for {sleep_time:.1f}s...")
+                    else:
+                        sleep_time = random.uniform(1.0, 2.5)
+                        logger.warning(f"Game stream interrupted for {game_id}: {stream_err}. Reconnecting in {sleep_time:.1f}s...")
+                    time.sleep(sleep_time)
 
         except Exception as e:
             logger.error(f"Exception during game {game_id}: {e}", exc_info=True)
@@ -485,8 +491,15 @@ class PanicFishBot:
                                     continue
                                 stop_event = threading.Event()
                                 self.active_games[game_id] = stop_event
+                                num_active = len(self.active_games)
+
+                            # If multiple games reconnect simultaneously on container reboot, stagger by 250ms
+                            if num_active > 1:
+                                time.sleep(0.25)
+
                             t = threading.Thread(target=self.handle_game, args=(game_id, stop_event), daemon=True)
                             t.start()
+
 
                     elif event_type == "gameFinish":
                         game = event.get("game", {})

@@ -75,8 +75,7 @@ class PanicEngine:
     Implements 13-tier nerfing architecture across:
     - God-Mode (3600 Elo)
     - Resource Capping (3300, 3000, 2700 Elo)
-    - Softmax Temperature Sampling over MultiPV (2400, 2100, 1800, 1500 Elo)
-    - Tactical Blindness (1200, 900, 600 Elo)
+    - Softmax Temperature & Tactical Blindness Scaling over MultiPV (2400, 2100, 1800, 1500, 1200, 900, 600 Elo)
     - Passive Error Choice (300 Elo)
     - Engine Bypass / Potato Mode (0 Elo)
     """
@@ -179,27 +178,18 @@ class PanicEngine:
                     logger.warning(f"300 Elo passive error fallback: {e}")
                 return random.choice(legal_moves)
 
-            # Tier 4: 1200 - 600 Elo - Tactical Blindness (Hard Depth Limits)
-            if current_elo <= 1200:
-                depth_map = {1200: 3, 900: 2, 600: 1}
-                d = depth_map.get(current_elo, 2 if current_elo <= 900 else 3)
-                try:
-                    res = self.engine.play(board, chess.engine.Limit(depth=d))
-                    logger.info(f"Tactical Blindness ({current_elo} Elo, Depth {d}): Played {res.move.uci()}")
-                    return res.move
-                except Exception as e:
-                    logger.error(f"Tactical blindness engine error: {e}")
-                    return random.choice(legal_moves)
-
-            # Tier 3: 2400 - 1500 Elo - Softmax Temperature over MultiPV
+            # Tier 3: 2400 - 600 Elo - Softmax Temperature & Tactical Blindness over MultiPV
             if current_elo <= 2400:
                 softmax_cfg = {
                     2400: (3, 10, 0.1),
                     2100: (3, 10, 0.3),
-                    1800: (5, 10, 0.7),
-                    1500: (5, 10, 1.2),
+                    1800: (4, 8, 0.7),
+                    1500: (4, 6, 1.2),
+                    1200: (5, 5, 1.8),
+                    900: (5, 3, 2.6),
+                    600: (6, 2, 3.6),
                 }
-                mpv, d, temp = softmax_cfg.get(current_elo, (5, 10, 0.7))
+                mpv, d, temp = softmax_cfg.get(current_elo, (5, 4, 2.0))
                 try:
                     analysis = self.engine.analyse(
                         board,
@@ -208,10 +198,11 @@ class PanicEngine:
                     )
                     chosen = self._softmax_sample(analysis, temp)
                     if chosen:
-                        logger.info(f"Softmax Sampling ({current_elo} Elo, T={temp}, D={d}): Played {chosen.uci()}")
+                        logger.info(f"Softmax Sampling ({current_elo} Elo, T={temp}, D={d}, MPV={mpv}): Played {chosen.uci()}")
                         return chosen
                 except Exception as e:
                     logger.warning(f"Softmax analysis error: {e}")
+                return random.choice(legal_moves)
 
             # Tier 2: 3300 - 2700 Elo - Resource Capping
             if current_elo <= 3300:

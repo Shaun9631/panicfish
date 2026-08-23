@@ -3,6 +3,7 @@ Panic Engine - Master Controller for Stockfish with Dynamic Check-Based Degradat
 Shared singleton engine supporting multiple concurrent game sessions with minimal memory footprint.
 """
 
+import math
 import random
 import logging
 import threading
@@ -71,6 +72,13 @@ class PanicEngine:
     """
     Shared Master Chess Engine instance.
     Handles move evaluation for multiple concurrent games through thread-safe locking.
+    Implements 13-tier nerfing architecture across:
+    - God-Mode (3600 Elo)
+    - Resource Capping (3300, 3000, 2700 Elo)
+    - Softmax Temperature Sampling over MultiPV (2400, 2100, 1800, 1500 Elo)
+    - Tactical Blindness (1200, 900, 600 Elo)
+    - Passive Error Choice (300 Elo)
+    - Engine Bypass / Potato Mode (0 Elo)
     """
 
     def __init__(self, stockfish_path: str):
@@ -105,46 +113,47 @@ class PanicEngine:
                 finally:
                     self.engine = None
 
-    def get_depth_for_elo(self, elo: int) -> Tuple[int, float]:
+    def _softmax_sample(self, analysis: list[dict], temp: float) -> Optional[chess.Move]:
         """
-        Returns (depth, max_time_seconds) for a given Elo.
-        Uses pure Calculation Horizon (depth) scaling at Skill Level 20.
+        Samples a move from MultiPV analysis using a Boltzmann Softmax probability distribution.
+        P(move_i) = exp(score_i / (100 * temp)) / sum(exp(score_j / (100 * temp)))
         """
-        if elo >= 3400:
-            return 20, 1.5
-        elif elo >= 3100:
-            return 16, 1.2
-        elif elo >= 2800:
-            return 14, 1.0
-        elif elo >= 2500:
-            return 12, 0.8
-        elif elo >= 2200:
-            return 10, 0.6
-        elif elo >= 1900:
-            return 9, 0.5
-        elif elo >= 1600:
-            return 7, 0.4
-        elif elo >= 1300:
-            return 5, 0.3
-        elif elo >= 1000:
-            return 4, 0.25
-        elif elo >= 700:
-            return 3, 0.2
-        elif elo >= 400:
-            return 2, 0.15
-        else:  # 100 - 300 Elo
-            return 1, 0.05
+        candidates = []
+        cps = []
+        for entry in analysis:
+            pv = entry.get("pv")
+            score = entry.get("score")
+            if not pv or score is None:
+                continue
+            rel_score = score.relative.score(mate_score=10000)
+            if rel_score is not None:
+                candidates.append(pv[0])
+                cps.append(rel_score)
+
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        max_cp = max(cps)
+        # Scaled by 100 centipawns (1.0 pawn) * temperature
+        weights = [math.exp(max(-20.0, min(20.0, (cp - max_cp) / (100.0 * temp)))) for cp in cps]
+        total_w = sum(weights)
+        if total_w <= 0:
+            return candidates[0]
+        probs = [w / total_w for w in weights]
+        return random.choices(candidates, weights=probs, k=1)[0]
 
     def choose_move(self, board: chess.Board, current_elo: int, time_limit: float = 1.5) -> Optional[chess.Move]:
         """
-        Calculates the next move based on current rating.
+        Calculates the next move based on the 13-tier nerfing architecture.
         Thread-safe across multiple concurrent game sessions.
         """
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             return None
 
-        # Tier 4: 0 Elo - Potato Mode (pure random legal moves / 0 engine calculation)
+        # Tier 6: 0 Elo - Potato Mode (pure random legal moves / 0 engine calculation)
         if current_elo <= 0:
             logger.info("POTATO MODE (0 Elo): Selecting random legal move.")
             return random.choice(legal_moves)
@@ -153,73 +162,81 @@ class PanicEngine:
             if not self.engine:
                 self.start()
 
-            # Tier 3: 300 - 1200 Elo Human Panic Mode (Plausible tactical mistakes)
-            if current_elo <= 1200:
-                panic_chance = (1300 - current_elo) / 1300.0 * 0.70
-                if random.random() < panic_chance and len(legal_moves) > 1:
-                    try:
-                        analysis = self.engine.analyse(
-                            board,
-                            chess.engine.Limit(depth=4, time=0.1),
-                            multipv=min(5, len(legal_moves))
-                        )
-                        if analysis and len(analysis) > 1:
-                            top_entry = analysis[0]
-                            top_score = top_entry["score"].relative.score(mate_score=10000)
-                            if top_score is not None:
-                                # Find plausible human blunders (-100 to -400 centipawns worse than best move)
-                                blunder_candidates = [
-                                    entry["pv"][0]
-                                    for entry in analysis[1:]
-                                    if entry.get("pv")
-                                    and entry["score"].relative.score(mate_score=10000) is not None
-                                    and -400 <= (entry["score"].relative.score(mate_score=10000) - top_score) <= -100
-                                ]
-                                if blunder_candidates:
-                                    chosen = random.choice(blunder_candidates)
-                                    logger.info(f"Human Panic Mode ({current_elo} Elo): Playing human-like mistake {chosen.uci()}")
-                                    return chosen
-                                # Fallback: Pick 2nd or 3rd candidate move
-                                fallback_candidates = [
-                                    entry["pv"][0]
-                                    for entry in analysis[1:3]
-                                    if entry.get("pv")
-                                ]
-                                if fallback_candidates:
-                                    chosen = random.choice(fallback_candidates)
-                                    logger.info(f"Human Panic Mode ({current_elo} Elo): Playing sub-optimal candidate {chosen.uci()}")
-                                    return chosen
-                    except Exception as e:
-                        logger.warning(f"Human panic analysis fallback: {e}")
-
-            depth, target_time = self.get_depth_for_elo(current_elo)
-
-            # Opening Variety (Moves 1 - 3): randomly choose among top GM moves within <= 25 centipawns
-            if board.fullmove_number <= 3 and current_elo >= 2400:
+            # Tier 5: 300 Elo - Passive Error Choice (Worst 3 candidates at Depth 1)
+            if current_elo <= 300:
                 try:
-                    analysis = self.engine.analyse(board, chess.engine.Limit(depth=12, time=0.35), multipv=4)
-                    if analysis and len(analysis) > 1:
-                        top_score = analysis[0]["score"].relative.score(mate_score=10000)
-                        if top_score is not None:
-                            candidates = [
-                                entry["pv"][0]
-                                for entry in analysis
-                                if entry.get("pv")
-                                and entry["score"].relative.score(mate_score=10000) is not None
-                                and abs(entry["score"].relative.score(mate_score=10000) - top_score) <= 25
-                            ]
-                            if candidates:
-                                chosen = random.choice(candidates)
-                                logger.info(f"Opening Variety: playing {chosen.uci()} from {len(candidates)} top GM moves.")
-                                return chosen
+                    analysis = self.engine.analyse(
+                        board,
+                        chess.engine.Limit(depth=1),
+                        multipv=min(5, len(legal_moves))
+                    )
+                    worst_3 = [entry["pv"][0] for entry in analysis[-3:] if entry.get("pv")]
+                    if worst_3:
+                        chosen = random.choice(worst_3)
+                        logger.info(f"Passive Error Choice (300 Elo): Selected from worst candidates -> {chosen.uci()}")
+                        return chosen
                 except Exception as e:
-                    logger.warning(f"Opening variety analysis fallback: {e}")
-
-            actual_time = max(0.05, min(time_limit, target_time))
-            try:
-                limit = chess.engine.Limit(depth=depth, time=actual_time)
-                result = self.engine.play(board, limit)
-                return result.move
-            except Exception as e:
-                logger.error(f"Engine play error: {e}")
+                    logger.warning(f"300 Elo passive error fallback: {e}")
                 return random.choice(legal_moves)
+
+            # Tier 4: 1200 - 600 Elo - Tactical Blindness (Hard Depth Limits)
+            if current_elo <= 1200:
+                depth_map = {1200: 3, 900: 2, 600: 1}
+                d = depth_map.get(current_elo, 2 if current_elo <= 900 else 3)
+                try:
+                    res = self.engine.play(board, chess.engine.Limit(depth=d))
+                    logger.info(f"Tactical Blindness ({current_elo} Elo, Depth {d}): Played {res.move.uci()}")
+                    return res.move
+                except Exception as e:
+                    logger.error(f"Tactical blindness engine error: {e}")
+                    return random.choice(legal_moves)
+
+            # Tier 3: 2400 - 1500 Elo - Softmax Temperature over MultiPV
+            if current_elo <= 2400:
+                softmax_cfg = {
+                    2400: (3, 10, 0.1),
+                    2100: (3, 10, 0.3),
+                    1800: (5, 10, 0.7),
+                    1500: (5, 10, 1.2),
+                }
+                mpv, d, temp = softmax_cfg.get(current_elo, (5, 10, 0.7))
+                try:
+                    analysis = self.engine.analyse(
+                        board,
+                        chess.engine.Limit(depth=d, time=0.25),
+                        multipv=min(mpv, len(legal_moves))
+                    )
+                    chosen = self._softmax_sample(analysis, temp)
+                    if chosen:
+                        logger.info(f"Softmax Sampling ({current_elo} Elo, T={temp}, D={d}): Played {chosen.uci()}")
+                        return chosen
+                except Exception as e:
+                    logger.warning(f"Softmax analysis error: {e}")
+
+            # Tier 2: 3300 - 2700 Elo - Resource Capping
+            if current_elo <= 3300:
+                resource_cfg = {
+                    2700: (14, 0.1),
+                    3000: (16, 0.4),
+                    3300: (18, 0.8),
+                }
+                d, t = resource_cfg.get(current_elo, (16, 0.4))
+                actual_time = max(0.05, min(time_limit, t))
+                try:
+                    res = self.engine.play(board, chess.engine.Limit(depth=d, time=actual_time))
+                    logger.info(f"Resource Capping ({current_elo} Elo, D={d}, T={actual_time}s): Played {res.move.uci()}")
+                    return res.move
+                except Exception as e:
+                    logger.error(f"Resource capping error: {e}")
+                    return random.choice(legal_moves)
+
+            # Tier 1: 3600 Elo - God-Mode (Uncapped Depth)
+            actual_time = max(0.1, min(time_limit, 1.0))
+            try:
+                res = self.engine.play(board, chess.engine.Limit(time=actual_time))
+                logger.info(f"God-Mode (3600 Elo): Played {res.move.uci()} (Time: {actual_time}s)")
+                return res.move
+            except Exception as e:
+                logger.error(f"God-mode error: {e}")
+                return random.choice(legal_moves)
+

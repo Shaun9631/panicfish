@@ -139,8 +139,14 @@ class PanicEngine:
         total_w = sum(weights)
         if total_w <= 0:
             return candidates[0]
-        probs = [w / total_w for w in weights]
-        return random.choices(candidates, weights=probs, k=1)[0]
+
+        # Min-P Thresholding: Prune any candidate move with < 1.0% probability to eliminate lottery blunders
+        filtered = [(c, w) for c, w in zip(candidates, weights) if (w / total_w) >= 0.01]
+        if not filtered:
+            return candidates[0]
+
+        valid_candidates, valid_weights = zip(*filtered)
+        return random.choices(valid_candidates, weights=valid_weights, k=1)[0]
 
     def choose_move(self, board: chess.Board, current_elo: int, time_limit: float = 1.5) -> Optional[chess.Move]:
         """
